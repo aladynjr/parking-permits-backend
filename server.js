@@ -4,7 +4,6 @@ const users = require('./routes/usersroutes');
 const registrations = require('./routes/registrationsroutes');
 const app = express();
 app.use(express.json())
-app.use(cors());
 
 const pool = require('./db');
 
@@ -12,6 +11,15 @@ var cron = require('node-cron');
 
 const EventEmitter = require('events');
 const event = new EventEmitter();
+
+const corsOptions = {
+    origin: '*',
+    credentials: true,            //access-control-allow-credentials:true
+    optionSuccessStatus: 200,
+}
+
+app.use(cors(corsOptions)) // Use this after the variable declaration
+
 
 //puppeteer
 const { Keyboard } = require('puppeteer');
@@ -26,8 +34,8 @@ app.use("/api/appuser", users)
 app.get("/", async (req, res) => {
     try {
 
-        res.json({'message: ': 'this is working finnnnnnne'})
-        } catch (err) {
+        res.json({ 'message: ': 'this is working finnnnnnne' })
+    } catch (err) {
         console.log(err.message)
     }
 })
@@ -84,13 +92,23 @@ const RegisterVehicle = (
         await page.goto(submissionUrl, { waitUntil: 'networkidle2' });
         await page.waitForSelector('body > main > section:nth-child(2) > nav:nth-child(1) > a:nth-child(5)');
         await clickByText(page, `register vehicle`);
-        await page.waitForSelector('body > main > section:nth-child(3) > form > fieldset.vehicle > label > input[type=text]');
+        await page.waitForTimeout(4000)
+        await page.waitForSelector('body > main > section:nth-child(3) > form > fieldset.valid');
         await page.type('INPUT[name=vehicle]', licencePlate)
         await page.type('INPUT[name=tenant]', apartmentNumber)
         await page.type('INPUT[name=token]', passcode)
         await page.type('SELECT[name=startDate]', startDate)
         await page.type('time', startTime);
-        await page.type('SELECT[name=duration]', parkingDuration)
+        // await page.type('body > main > section:nth-child(3) > form > fieldset.valid > fieldset.valid.duration > label > select', parkingDuration)
+        //check if selector exists or not 
+        const durationSelector = await page.$('INPUT[name=duration]');
+
+        if (durationSelector) {
+            await page.type('INPUT[name=duration]', parkingDuration)
+        }
+
+
+
         await page.type('INPUT[type=email]', contactEmail)
         await page.type('INPUT[type=tel]', contactPhone)
         await page.click('BUTTON[type=submit')
@@ -159,9 +177,9 @@ const CancelRegistration = (
 
         await page.type('INPUT[name=tenant]', apartmentNumber)
         await page.type('INPUT[name=password]', passcode)
-        
+
         await page.click('body > main > section:nth-child(17) > form > button')
-        
+
         page.on('dialog', async dialog => {
             console.log(dialog.message());
             console.log('a dialog appeared !')
@@ -185,24 +203,24 @@ const CancelRegistration = (
             //wait for cancel button ,click on it
             await page.waitForSelector('body > main > section.permit > figure.permit > nav > button');
             await page.click('body > main > section.permit > figure.permit > nav > button')
-            
+
             //write email 
             await page.type('INPUT[id=send-to-email]', contactEmail)
-            
+
             //click cancel button
             await page.waitForSelector('body > main > section.permit > figure.permit > nav > section > form > button');
-           // await page.click('body > main > section.permit > figure.permit > nav > section > form > button')
-           UpdateRegistration(id, 'registration_cancel_error', '')
-           UpdateRegistration(id, 'registration_error', '')
+            // await page.click('body > main > section.permit > figure.permit > nav > section > form > button')
+            UpdateRegistration(id, 'registration_cancel_error', '')
+            UpdateRegistration(id, 'registration_error', '')
 
-           UpdateRegistration(id, 'registration_status', false)
+            UpdateRegistration(id, 'registration_status', false)
 
 
             console.log('registration cancelled, id : ', id)
         }
 
 
-       await browser.close();
+        await browser.close();
 
 
 
@@ -211,7 +229,7 @@ const CancelRegistration = (
 
 
 //update registration 
-const UpdateRegistration =  (id, column, newValue) => {
+const UpdateRegistration = (id, column, newValue) => {
     pool.query(
         'UPDATE registration SET ' + column + ' = $1 WHERE registration_id = $2',
         [newValue, id],
@@ -219,24 +237,33 @@ const UpdateRegistration =  (id, column, newValue) => {
             if (error) {
                 throw error
             }
-            console.log('updated column ' + column + ' in registration with id : ', id)
+            if(column=='registration_contact_phone'){
+console.log('updated bot last active time value to : ', new Date(newValue).toLocaleString())
+            }else {
+
+                console.log('updated column ' + column + ' with : ', newValue ,' in registration with id : ', id)
+            }
         }
     )
 }
 
 var registrationsList
 const FetchRegistrations = async () => {
-    UpdateRegistration(28, 'registration_contact_phone', new Date().getTime())
+    UpdateRegistration(1, 'registration_contact_phone', new Date().getTime())
     try {
         const allUsersRegistrations = await pool.query('SELECT * FROM registration');
 
         registrationsList = allUsersRegistrations.rows;
         //console.log(registrationsList?.length);
-        if (registrationsList.length>0) {
+        if (registrationsList.length > 0) {
             registrationsList.map((item) => {
+                //get date from registration start date and registration start time 
+  
+
+                // console.log( 'item : ', item.registration_id);
                 //registrations that are not registered yet
                 if (item.registration_status == false) {
-                  //  return;
+                    //  return;
                     var sameHour = Number(new Date().toLocaleString('en-US', { hour: 'numeric', hour12: true }).substring(0, 2)) == Number(item.registration_start_time.split(':')[0]);
                     var sameMinute = (Number(item.registration_start_time.split(':')[1].substring(0, 2)) >= Number(String(new Date().getMinutes()).padStart(2, '0')) - 10) && (Number(item.registration_start_time.split(':')[1].substring(0, 2)) <= Number(String(new Date().getMinutes()).padStart(2, '0')) + 10);
                     //  console.log('current minute: ' + String(new Date().getMinutes()).padStart(2, '0'));
@@ -253,7 +280,7 @@ const FetchRegistrations = async () => {
                     var isActiveDay = item.registration_active_days.includes(new Date().toLocaleString('en-us', { weekday: 'long' }))
 
                     if (isActiveDay && sameHour && sameMinute && sameAMPM && startingDayPassed) {
-                        console.log('eligible for registration,  id :', item.registration_id);
+                        //  console.log('eligible for registration,  id :', item.registration_id);
                         RegisterVehicle(
                             item.registration_id,
                             item.registration_licence_plate,
@@ -267,7 +294,13 @@ const FetchRegistrations = async () => {
 
                         )
                     } else {
-                        console.log('not eligible for registration, because of : ', ((!isActiveDay) ? ' not same day ' : ''), ((!sameHour)  ? ' not same hour ' : ''), ((!sameMinute) ? 'not same minute' : ''), ((!sameAMPM) ? 'not same AM or PM  ' : ''), ((!startingDayPassed) ? 'start date is not reached ' : ''), ', id : ', item.registration_id);
+                        console.log('not eligible for registration, because of : ', 
+                        ((!isActiveDay) ? ' not same day ' : ''), 
+                        ((!sameHour) ? (' not same hour ' ) : ''), 
+                        ((!sameMinute) ? 'not same minute' : ''), 
+                        ((!sameAMPM) ? 'not same AM or PM  ' : ''), 
+                        ((!startingDayPassed) ? 'start date is not reached ' : ''), 
+                        ', id : ', item.registration_id);
                     }
                 }
                 //registrations that are registered and waiting for cancellation
@@ -280,12 +313,12 @@ const FetchRegistrations = async () => {
                     //just for testing
                     var futureDate = new Date(new Date().setHours(new Date().getHours() + 12))
 
-                    console.log(endDate)
-                    console.log(futureDate)
+                    var registrationDate = new Date(new Date(item.registration_start_date).toDateString() + ' ' + new Date().getFullYear() + ' ' + item.registration_start_time);
+                    var registrationEndDate = new Date(registrationDate.getTime() + (Number(item.registration_hours_until_cancel) * 60 * 60 * 1000));
 
-                    console.log(endDate <= futureDate)
+
                     //check if endDate has passed or not
-                    if (endDate <= futureDate) {
+                    if (registrationEndDate <= registrationDate) {
                         console.log('registration is eligible for cancellation, id : ', item.registration_id);
                         // return ;
                         CancelRegistration(
@@ -310,19 +343,18 @@ const FetchRegistrations = async () => {
     }
 }
 
-
+//FetchRegistrations()
 
 const task = cron.schedule('* */5 * * * *', async () => {
-     await FetchRegistrations();
-     console.log(new Date().toLocaleString());
+    await FetchRegistrations();
     event.emit('JOB COMPLETED');
 });
 
 event.on('JOB COMPLETED', () => {
-    
+
     console.log('Job done!');
     task.stop();
-    setTimeout(() => { task.start() }, 10000);
+    setTimeout(() => { task.start() }, 60000);
 });
 
 app.listen(8080, () => {
