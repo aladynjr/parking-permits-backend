@@ -28,6 +28,7 @@ router.get("/:id", async (req, res) => {
     }
 })
 
+
 //delete a registration
 router.delete("/:id", async (req, res) => {
     try {

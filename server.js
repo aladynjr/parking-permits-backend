@@ -97,25 +97,34 @@ const RegisterVehicle = (
         await page.type('INPUT[name=vehicle]', licencePlate)
         await page.type('INPUT[name=tenant]', apartmentNumber)
         await page.type('INPUT[name=token]', passcode)
-        await page.type('SELECT[name=startDate]', startDate)
-        await page.type('time', startTime);
-        // await page.type('body > main > section:nth-child(3) > form > fieldset.valid > fieldset.valid.duration > label > select', parkingDuration)
+
+        await page.select('select[name="startDate"]', startDate)
+        await page.select('select[name="valid.min.time"]', startTime);
+
         //check if selector exists or not 
         const durationSelector = await page.$('INPUT[name=duration]');
 
         if (durationSelector) {
-            await page.type('INPUT[name=duration]', parkingDuration)
+            await page.select('select[name=duration]', parkingDuration)
         }
+
+
+     //   await page.select('select[name="duration"]', parkingDuration);
+
+        //await page.type('INPUT[type=email]', ('start date : ' + startDate + ' start time : ' + startTime))
+
 
 
 
         await page.type('INPUT[type=email]', contactEmail)
         await page.type('INPUT[type=tel]', contactPhone)
+
+       // await page.waitForTimeout(30000);
+
         await page.click('BUTTON[type=submit')
 
-        // await page.waitForTimeout(3000);
 
-        //another method to check if chomre alert appeared     
+         //check if chomre alert appeared     
         page.on('dialog', async dialog => {
             console.log(dialog.message());
             console.log('a dialog appeared !')
@@ -124,19 +133,21 @@ const RegisterVehicle = (
             await dialog.accept();
         });
 
+        //check if an alert dialog appeared then log the message 
         await page.waitForTimeout(3000);
+
         if (page.url().startsWith('https://homecomingpreserve.parkingattendant.com/p/')) {
             console.log('registration success')
             UpdateRegistration(id, 'registration_status', true)
-            await browser.close();
+               await browser.close();
         }
         else {
             console.log('registration failed')
             UpdateRegistration(id, 'registration_status', false)
-            await browser.close();
+              await browser.close();
         }
         //finish and close browser
-        await browser.close();
+          await browser.close();
 
     })();
 }
@@ -237,11 +248,11 @@ const UpdateRegistration = (id, column, newValue) => {
             if (error) {
                 throw error
             }
-            if(column=='registration_contact_phone'){
-console.log('updated bot last active time value to : ', new Date(newValue).toLocaleString())
-            }else {
+            if (column == 'registration_contact_phone') {
+                console.log('#####   updated bot last active time value to : ', new Date(newValue).toLocaleString("en-US", { timeZone: "America/Los_Angeles" }), '    #####')
+            } else {
 
-                console.log('updated column ' + column + ' with : ', newValue ,' in registration with id : ', id)
+                console.log('updated column ' + column + ' with : ', newValue, ' in registration with id : ', id)
             }
         }
     )
@@ -254,84 +265,101 @@ const FetchRegistrations = async () => {
         const allUsersRegistrations = await pool.query('SELECT * FROM registration');
 
         registrationsList = allUsersRegistrations.rows;
-        //console.log(registrationsList?.length);
+        //console.log(registrationsList.length);
         if (registrationsList.length > 0) {
-            registrationsList.map((item) => {
-                //get date from registration start date and registration start time 
+            registrationsList.map((registration) => {
+                var startDatePrepare = new Date(registration.registration_start_date + ' ' + registration.registration_start_time)//.toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+                var startDate = new Date(startDatePrepare.getFullYear(), startDatePrepare.getMonth(), startDatePrepare.getDate())               
+               
+                var endDatePrepare = new Date(startDate.getTime() + (Number(registration.registration_hours_until_cancel) * 60 * 60 * 1000));
+                var endDate = new Date(endDatePrepare.getFullYear(), endDatePrepare.getMonth(), endDatePrepare.getDate())
+
   
-
-                // console.log( 'item : ', item.registration_id);
-                //registrations that are not registered yet
-                if (item.registration_status == false) {
-                    //  return;
-                    var sameHour = Number(new Date().toLocaleString('en-US', { hour: 'numeric', hour12: true }).substring(0, 2)) == Number(item.registration_start_time.split(':')[0]);
-                    var sameMinute = (Number(item.registration_start_time.split(':')[1].substring(0, 2)) >= Number(String(new Date().getMinutes()).padStart(2, '0')) - 10) && (Number(item.registration_start_time.split(':')[1].substring(0, 2)) <= Number(String(new Date().getMinutes()).padStart(2, '0')) + 10);
-                    //  console.log('current minute: ' + String(new Date().getMinutes()).padStart(2, '0'));
-                    //   console.log('registration minute : ', (item.registration_start_time.split(':')[1].substring(0, 2)));
-                    var sameAMPM = item.registration_start_time.substring(item.registration_start_time.length - 2, item.registration_start_time.length) == (new Date().getHours() >= 12 ? 'PM' : 'AM');
-                    //console.log('AM or PM now : ', new Date().getHours() >= 12  'PM' : 'AM');
-                    //console.log('registration AM or PM : ', item.registration_start_time.substring(item.registration_start_time.length-2, item.registration_start_time.length))
-                    //    console.log('registration start date : ', new Date(item.registration_start_date+ ' ' + new Date().getFullYear() ).toLocaleString() );
-                    //    console.log('                  today : ' , new Date().toLocaleString())
-                    var startingDayPassed = new Date(item.registration_start_date + ' ' + new Date().getFullYear()).toDateString() <= new Date().toDateString();
-                    //console.log(' starting day has been passed : ', startingDayPassed);
+                if (registration.registration_status == false) {
+                    var minuteTolerance = 10;
+                    var isSameHour = Number(new Date().toLocaleString('en-US', { timeZone: "America/Los_Angeles", hour: 'numeric', hour12: true }).substring(0, 2)) == Number(registration.registration_start_time.split(':')[0]);
+                    var isSameMinute = (Number(registration.registration_start_time.split(':')[1].substring(0, 2)) >= Number(String(new Date().getMinutes()).padStart(2, '0')) - minuteTolerance) && (Number(registration.registration_start_time.split(':')[1].substring(0, 2)) <= Number(String(new Date().getMinutes()).padStart(2, '0')) + minuteTolerance);
+                    var isActiveDay = registration.registration_active_days.includes(new Date().toLocaleString('en-us', { timeZone: "America/Los_Angeles", weekday: 'long' }))
+                    var isStartingDayPassed = startDate <= new Date();
+                    //check is star date has passed or not 
+                    //compare startDate and endDate without time 
 
 
-                    var isActiveDay = item.registration_active_days.includes(new Date().toLocaleString('en-us', { weekday: 'long' }))
+                    
+                    var eligible = isActiveDay && isSameHour && isSameMinute && isStartingDayPassed
 
-                    if (isActiveDay && sameHour && sameMinute && sameAMPM && startingDayPassed) {
-                        //  console.log('eligible for registration,  id :', item.registration_id);
+                    
+                    console.log(`
+                    `)
+                    console.log('---------- FALSE STATUS, ID : ', registration.registration_id, ' --------------')
+
+
+                    if (eligible) {
+                          console.log('eligible for registration,  id :', registration.registration_id);
                         RegisterVehicle(
-                            item.registration_id,
-                            item.registration_licence_plate,
-                            item.registration_apartment_number,
-                            item.registration_passcode,
-                            item.registration_start_date,
-                            item.registration_start_time,
-                            item.registration_parking_duration,
-                            item.registration_contact_email,
-                            item.registration_contact_phone,
+                            registration.registration_id,
+                            registration.registration_licence_plate,
+                            registration.registration_apartment_number,
+                            registration.registration_passcode,
+                            registration.registration_start_date,
+                            registration.registration_start_time,
+                            registration.registration_parking_duration,
+                            registration.registration_contact_email,
+                            registration.registration_contact_phone,
 
                         )
                     } else {
-                        console.log('not eligible for registration, because of : ', 
-                        ((!isActiveDay) ? ' not same day ' : ''), 
-                        ((!sameHour) ? (' not same hour ' ) : ''), 
-                        ((!sameMinute) ? 'not same minute' : ''), 
-                        ((!sameAMPM) ? 'not same AM or PM  ' : ''), 
-                        ((!startingDayPassed) ? 'start date is not reached ' : ''), 
-                        ', id : ', item.registration_id);
+                        console.log('not eligible for registration, because of : ',
+                            ((!isActiveDay) ? '- not same day -' : ''),
+                            ((!isSameHour) ? ('- not same hour -') : ''),
+                            ((!isSameMinute) ? '- not same minute -' : ''),
+                            ((!isStartingDayPassed) ? '- start date is not reached -' : ''));
                     }
+                    if (!isSameHour) {
+                        console.log('Registration Hour : ' + Number(registration.registration_start_time.split(':')[0]) + ' Current : ' + Number(new Date().toLocaleString('en-US', { hour: 'numeric', hour12: true, timeZone: "America/Los_Angeles" }).substring(0, 2)))
+                    }
+                    if (!isSameMinute) {
+                        console.log('Registration Minute : ' + Number(registration.registration_start_time.split(':')[1].substring(0, 2)) + ' Current : ' + Number(String(new Date().getMinutes()).padStart(2, '0')))
+                    }
+ 
+                    if (!isStartingDayPassed) {
+                        console.log('Registration Start Date : ' + startDate.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }) + ' Current ' + new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" }))
+                    }
+                    if (!isActiveDay) { console.log('Registration Active Days : ' + registration.registration_active_days) }
+
+                    console.log(`
+                    `)
+
                 }
+
                 //registrations that are registered and waiting for cancellation
-                else if (item.registration_status == true) {
-                    console.log('registration already done, id : ', item.registration_id)
+                else if (registration.registration_status == true) {
+                    console.log(`
+                    `)
 
-                    var startDate = new Date(new Date().toDateString() + ' ' + new Date().getFullYear() + ' ' + item.registration_start_time);
-                    var endDate = new Date(startDate.getTime() + (Number(item.registration_hours_until_cancel) * 60 * 60 * 1000));
+                    console.log('---------- TRUE STATUS, ID : ', registration.registration_id, '  --------------')
 
-                    //just for testing
-                    var futureDate = new Date(new Date().setHours(new Date().getHours() + 12))
-
-                    var registrationDate = new Date(new Date(item.registration_start_date).toDateString() + ' ' + new Date().getFullYear() + ' ' + item.registration_start_time);
-                    var registrationEndDate = new Date(registrationDate.getTime() + (Number(item.registration_hours_until_cancel) * 60 * 60 * 1000));
+                    console.log('registration already done, id : ', registration.registration_id)
 
 
                     //check if endDate has passed or not
-                    if (registrationEndDate <= registrationDate) {
-                        console.log('registration is eligible for cancellation, id : ', item.registration_id);
+                    if (endDate <= startDate) {
+                        console.log('registration is eligible for cancellation, id : ', registration.registration_id);
                         // return ;
                         CancelRegistration(
-                            item.registration_id,
-                            item.registration_licence_plate,
-                            item.registration_apartment_number,
-                            item.registration_passcode,
-                            item.registration_start_date,
-                            item.registration_start_time,
-                            item.registration_parking_duration,
-                            item.registration_contact_email,
-                            item.registration_contact_phone)
+                            registration.registration_id,
+                            registration.registration_licence_plate,
+                            registration.registration_apartment_number,
+                            registration.registration_passcode,
+                            registration.registration_start_date,
+                            registration.registration_start_time,
+                            registration.registration_parking_duration,
+                            registration.registration_contact_email,
+                            registration.registration_contact_phone)
                     }
+
+                    console.log(`
+                    `)
 
                 }
 
@@ -348,6 +376,8 @@ const FetchRegistrations = async () => {
 const task = cron.schedule('* */5 * * * *', async () => {
     await FetchRegistrations();
     event.emit('JOB COMPLETED');
+}, {
+    timezone: "America/Los_Angeles"
 });
 
 event.on('JOB COMPLETED', () => {
